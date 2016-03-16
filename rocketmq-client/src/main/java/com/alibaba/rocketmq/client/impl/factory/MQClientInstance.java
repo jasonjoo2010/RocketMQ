@@ -665,46 +665,53 @@ public class MQClientInstance {
     public static TopicPublishInfo topicRouteData2TopicPublishInfo(final String topic,
                                                                    final TopicRouteData route) {
         TopicPublishInfo info = new TopicPublishInfo();
+        //convert queue data array to map including write perm recognizing
+        List<QueueData> qds = route.getQueueDatas();
+        Collections.sort(qds);
+        HashMap<String, QueueData> brokerMap = new HashMap<String, QueueData>();
+        for (QueueData qd : qds) {
+            if (PermName.isWriteable(qd.getPerm())) {
+            	BrokerData brokerData = null;
+                for (BrokerData bd : route.getBrokerDatas()) {
+                    if (bd.getBrokerName().equals(qd.getBrokerName())) {
+                        brokerData = bd;
+                        break;
+                    }
+                }
+
+                if (null == brokerData) {
+                    continue;
+                }
+
+                if (!brokerData.getBrokerAddrs().containsKey(MixAll.MASTER_ID)) {
+                    continue;
+                }
+
+                brokerMap.put(qd.getBrokerName(), qd);
+            }
+        }
         if (route.getOrderTopicConf() != null && route.getOrderTopicConf().length() > 0) {
             String[] brokers = route.getOrderTopicConf().split(";");
             for (String broker : brokers) {
                 String[] item = broker.split(":");
                 int nums = Integer.parseInt(item[1]);
-                for (int i = 0; i < nums; i++) {
-                    MessageQueue mq = new MessageQueue(topic, item[0], i);
-                    info.getMessageQueueList().add(mq);
+                if (brokerMap.containsKey(item[0])) {
+	                for (int i = 0; i < nums; i++) {
+	                    MessageQueue mq = new MessageQueue(topic, item[0], i);
+	                    info.getMessageQueueList().add(mq);
+	                }
                 }
             }
 
             info.setOrderTopic(true);
-        }
-        else {
-            List<QueueData> qds = route.getQueueDatas();
-            Collections.sort(qds);
-            for (QueueData qd : qds) {
-                if (PermName.isWriteable(qd.getPerm())) {
-                    BrokerData brokerData = null;
-                    for (BrokerData bd : route.getBrokerDatas()) {
-                        if (bd.getBrokerName().equals(qd.getBrokerName())) {
-                            brokerData = bd;
-                            break;
-                        }
-                    }
-
-                    if (null == brokerData) {
-                        continue;
-                    }
-
-                    if (!brokerData.getBrokerAddrs().containsKey(MixAll.MASTER_ID)) {
-                        continue;
-                    }
-
-                    for (int i = 0; i < qd.getWriteQueueNums(); i++) {
-                        MessageQueue mq = new MessageQueue(topic, qd.getBrokerName(), i);
-                        info.getMessageQueueList().add(mq);
-                    }
+        } else {
+            for (Entry<String, QueueData> entry : brokerMap.entrySet()) {
+            	QueueData qd = entry.getValue();
+            	for (int i = 0; i < qd.getWriteQueueNums(); i++) {
+                    MessageQueue mq = new MessageQueue(topic, qd.getBrokerName(), i);
+                    info.getMessageQueueList().add(mq);
                 }
-            }
+			}
 
             info.setOrderTopic(false);
         }
